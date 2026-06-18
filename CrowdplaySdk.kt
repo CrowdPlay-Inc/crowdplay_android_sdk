@@ -3,6 +3,8 @@ package com.crowdplay;
 import android.app.Activity
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Parcelable
 import com.google.firebase.messaging.RemoteMessage
 import io.flutter.embedding.android.FlutterActivity
@@ -12,14 +14,12 @@ import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.FlutterPlugin.FlutterPluginBinding
+import io.flutter.plugins.GeneratedPluginRegistrant
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMethodCodec
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
 import java.io.Serializable
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.Future
 
 fun Bundle.toMap(): Map<String, Any?> {
     val map = mutableMapOf<String, Any?>()
@@ -57,8 +57,11 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
     var flutterEngine: FlutterEngine? = null
         private set
     private var channel: MethodChannel? = null
+    private var appContext: android.content.Context? = null
     private var lastActivityContext: Activity? = null
-    private var childActivityId: Int = 98374897
+    private var childActivityId: Int = 37489
+    private var cachedFragment: FlutterFragment? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     var showVenueNextWalletHandler: (() -> Unit)? = null
     var onAuthStateChanged: ((CrowdPlayAuthState) -> Unit)? = null
@@ -66,7 +69,18 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
     private var pendingAuthFuture: CompletableFuture<CrowdPlayAuthResult>? = null
     var tokenRefreshHandler: (() -> CompletableFuture<Map<String, String>?>)? = null
 
-    private var pointsResult: CompletableFuture<Int?> = CompletableFuture<Int?>();
+    /**
+     * Invoked whenever the SDK needs to surface its UI — either because the
+     * host called startActivity() directly, or because a notification /
+     * deep link arrived that should bring CrowdPlay to the foreground.
+     *
+     * When this handler is set, the SDK will NOT auto-present (start the
+     * Flutter activity). The host app is responsible for making the SDK's
+     * surface visible — typically by switching to the tab/fragment that
+     * embeds getFragment(). When this handler is null, the SDK falls back
+     * to the legacy behavior of starting its own takeover activity.
+     */
+    var onPresentRequested: (() -> Unit)? = null
 
     companion object {
         private const val ENGINE_CACHE_KEY = "flutter_activity_id"
@@ -88,20 +102,20 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
         this.appUrlScheme = appUrlScheme
 
         this.initialized = true
+        this.appContext = context.applicationContext
         lastActivityContext = context
 
-        if (flutterEngine == null) {
-            flutterEngine = FlutterEngine(context)
+        flutterEngine = FlutterEngine(appContext!!)
 
-            flutterEngine!!.plugins.add(this)
-            flutterEngine!!.navigationChannel.setInitialRoute("/")
-            flutterEngine!!.dartExecutor.executeDartEntrypoint(
-                DartExecutor.DartEntrypoint.createDefault()
-            )
-            FlutterEngineCache
-                .getInstance()
-                .put(ENGINE_CACHE_KEY, flutterEngine)
-        }
+        GeneratedPluginRegistrant.registerWith(flutterEngine!!)
+        flutterEngine!!.plugins.add(this)
+        flutterEngine!!.navigationChannel.setInitialRoute("/")
+        flutterEngine!!.dartExecutor.executeDartEntrypoint(
+            DartExecutor.DartEntrypoint.createDefault()
+        )
+        FlutterEngineCache
+            .getInstance()
+            .put(ENGINE_CACHE_KEY, flutterEngine)
     }
 
     private fun ensureEngineReady() {
@@ -114,18 +128,57 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
         }
     }
 
+    /**
+     * Public entry point for "make CrowdPlay visible now." Routes through
+     * onPresentRequested if the host has set one (embedded integration);
+     * otherwise launches the takeover activity (default fullscreen).
+     */
     fun startActivity() {
-        ensureEngineReady()
-
-        val flutterActivity = FlutterActivity
-            .withCachedEngine(ENGINE_CACHE_KEY)
-            .build(lastActivityContext!!)
-        lastActivityContext!!.startActivityForResult(flutterActivity, childActivityId);
+        requestPresent()
     }
 
+    /**
+     * Single funnel for all SDK-initiated "show me now" requests
+     * (direct startActivity, notification arrival, deep-link arrival).
+     * Hands off to onPresentRequested when set; auto-presents otherwise.
+     */
+    private fun requestPresent() {
+        ensureEngineReady()
+        val handler = onPresentRequested
+        if (handler != null) {
+            handler()
+            return
+        }
+        val intent = FlutterActivity
+            .withCachedEngine(ENGINE_CACHE_KEY)
+            .build(lastActivityContext!!)
+        lastActivityContext!!.startActivityForResult(intent, childActivityId);
+    }
+
+    /**
+     * Returns the SDK's FlutterFragment, lazily creating it on first call and
+     * reusing the same instance thereafter. Only one FlutterFragment may be
+     * attached to the cached engine at a time — do not render this fragment
+     * in two places concurrently. Call resetFragment() if you need a fresh
+     * instance (e.g. after fully tearing down the host that owned it).
+     */
     fun getFragment(): FlutterFragment {
         ensureEngineReady()
-        return FlutterFragment.withCachedEngine(ENGINE_CACHE_KEY).build()
+        val existing = cachedFragment
+        if (existing != null) {
+            return existing
+        }
+        val fragment = FlutterFragment.withCachedEngine(ENGINE_CACHE_KEY).build<FlutterFragment>()
+        cachedFragment = fragment
+        return fragment
+    }
+
+    /**
+     * Discards the cached FlutterFragment so the next getFragment() call
+     * builds a fresh one. The underlying cached Flutter engine is retained.
+     */
+    fun resetFragment() {
+        cachedFragment = null
     }
 
     fun handleNotificationActivation(bundle : Bundle?) : Boolean {
@@ -135,14 +188,11 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
             return false;
         }
 
-        startActivity();
+        requestPresent();
 
-        fun launchActivity() = runBlocking {
-            delay(1000L);
-            channel!!.invokeMethod("handleNotification", bundle.toMap());
-        }
-
-        launchActivity();
+        mainHandler.postDelayed({
+            channel?.invokeMethod("handleNotification", bundle.toMap())
+        }, 1000L)
         return true;
     }
 
@@ -154,14 +204,11 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
             return false;
         }
 
-        startActivity();
+        requestPresent();
 
-        fun launchActivity() = runBlocking {
-            delay(1000L);
-            channel!!.invokeMethod("handleNotification", remoteMessage.data);
-        }
-
-        launchActivity();
+        mainHandler.postDelayed({
+            channel?.invokeMethod("handleNotification", remoteMessage.data)
+        }, 1000L)
         return true;
     }
 
@@ -205,9 +252,9 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
                 val handler = tokenRefreshHandler
                 if (handler != null) {
                     handler().thenAccept { freshToken ->
-                        result.success(freshToken)
+                        mainHandler.post { result.success(freshToken) }
                     }.exceptionally { _ ->
-                        result.success(null)
+                        mainHandler.post { result.success(null) }
                         null
                     }
                 } else {
@@ -317,12 +364,9 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
 
         channel!!.invokeMethod("handleAppLink", appLink.toString());
 
-        fun launchActivity() = runBlocking {
-            delay(300L);
-            startActivity();
-        }
-
-        launchActivity();
+        mainHandler.postDelayed({
+            requestPresent()
+        }, 300L)
         return true;
     }
 
