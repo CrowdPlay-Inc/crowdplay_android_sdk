@@ -66,6 +66,8 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
     var showVenueNextWalletHandler: (() -> Unit)? = null
     var onAuthStateChanged: ((CrowdPlayAuthState) -> Unit)? = null
     var onPointsChanged: ((Double) -> Unit)? = null
+    // Fired whenever the user's loyalty code changes (null = signed out).
+    var onLoyaltyCodeChanged: ((String?, String?) -> Unit)? = null
     private var pendingAuthFuture: CompletableFuture<CrowdPlayAuthResult>? = null
     var tokenRefreshHandler: (() -> CompletableFuture<Map<String, String>?>)? = null
 
@@ -105,27 +107,56 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
         this.appContext = context.applicationContext
         lastActivityContext = context
 
-        flutterEngine = FlutterEngine(appContext!!)
-
-        GeneratedPluginRegistrant.registerWith(flutterEngine!!)
-        flutterEngine!!.plugins.add(this)
-        flutterEngine!!.navigationChannel.setInitialRoute("/")
-        flutterEngine!!.dartExecutor.executeDartEntrypoint(
-            DartExecutor.DartEntrypoint.createDefault()
-        )
-        FlutterEngineCache
-            .getInstance()
-            .put(ENGINE_CACHE_KEY, flutterEngine)
+        buildAndCacheEngine(appContext!!)
     }
 
+    /**
+     * Constructs a FlutterEngine, wires up plugins + this instance, starts
+     * the Dart entrypoint, and installs the engine in FlutterEngineCache
+     * under our key. Extracted so ensureEngineReady() can rebuild after
+     * process death without duplicating the setup.
+     */
+    private fun buildAndCacheEngine(context: android.content.Context) {
+        val engine = FlutterEngine(context)
+        GeneratedPluginRegistrant.registerWith(engine)
+        engine.plugins.add(this)
+        engine.navigationChannel.setInitialRoute("/")
+        engine.dartExecutor.executeDartEntrypoint(
+            DartExecutor.DartEntrypoint.createDefault()
+        )
+        FlutterEngineCache.getInstance().put(ENGINE_CACHE_KEY, engine)
+        flutterEngine = engine
+    }
+
+    /**
+     * Called before any operation that requires the FlutterEngine.
+     *
+     * After Android kills the process for memory pressure, both the SDK
+     * singleton and FlutterEngineCache are wiped. When the host restores
+     * MainActivity and calls back into the SDK, `initialized` remains false
+     * so callers get a clear error. When the host has already called
+     * initialize() but the engine/cache disappeared some other way (rare),
+     * we rebuild in place so downstream FlutterActivity launches don't
+     * crash with "requested cached FlutterEngine did not exist."
+     */
     private fun ensureEngineReady() {
         if (!initialized) {
             throw Exception("Crowdplay SDK is not initialized. Please call initialize before calling this function.")
         }
-        // Re-cache engine if it was lost due to process death
-        if (FlutterEngineCache.getInstance().get(ENGINE_CACHE_KEY) == null && flutterEngine != null) {
-            FlutterEngineCache.getInstance().put(ENGINE_CACHE_KEY, flutterEngine)
+        val cacheMissing = FlutterEngineCache.getInstance().get(ENGINE_CACHE_KEY) == null
+        val engineMissing = flutterEngine == null
+        if (!cacheMissing && !engineMissing) return
+
+        // Prefer appContext; fall back to lastActivityContext's application
+        // context so the rebuilt engine doesn't retain an Activity.
+        val ctx = appContext ?: lastActivityContext?.applicationContext
+        if (ctx == null) {
+            throw IllegalStateException(
+                "Crowdplay SDK lost its FlutterEngine and has no context to rebuild it. " +
+                "The host must call CrowdplaySdk.initialize(...) again."
+            )
         }
+        buildAndCacheEngine(ctx)
     }
 
     /**
@@ -280,6 +311,14 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
                 }
                 result.success(null)
             }
+            "onLoyaltyCodeChanged" -> {
+                val args = call.arguments as? Map<*, *>
+                onLoyaltyCodeChanged?.invoke(
+                    args?.get("code") as? String,
+                    args?.get("description") as? String
+                )
+                result.success(null)
+            }
             else -> {
                 result.notImplemented()
             }
@@ -301,6 +340,9 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
             channel!!.setMethodCallHandler(null)
         }
         channel = null
+        // No engine means no more rotations, so the host's rendered code is
+        // already stale: clear it rather than leave a dead code on screen.
+        onLoyaltyCodeChanged?.invoke(null, null)
     }
 
     fun setAuthToken(authToken: String, provider: String): CompletableFuture<CrowdPlayAuthResult> {
@@ -358,7 +400,12 @@ class CrowdplaySdk : FlutterPlugin , MethodChannel.MethodCallHandler {
     }
 
     fun handleAppLink(appLink: Uri): Boolean {
-        if (flutterEngine == null || (appLink.host != "crowdplay" && appLink.host != "rtl-callback")) {
+        // TODO: Remove rtl-callback once deployed RTL producers use rtl-sdk/callback
+        // and legacy links and in-flight callbacks have been retired.
+        if (flutterEngine == null ||
+            (appLink.host != "crowdplay" &&
+             appLink.host != "rtl-sdk" &&
+             appLink.host != "rtl-callback")) {
             return false;
         }
 
