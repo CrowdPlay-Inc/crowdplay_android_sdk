@@ -74,6 +74,7 @@ class CrowdplaySdk :
         private set
     private var channel: MethodChannel? = null
     private var appContext: android.content.Context? = null
+    private var sdkExitHandler: (() -> Unit)? = null
     private var lastActivityContext: Activity? = null
     private var childActivityId: Int = 37489
     private var cachedFragment: FlutterFragment? = null
@@ -211,6 +212,7 @@ class CrowdplaySdk :
      * attached to the cached engine at a time — do not render this fragment
      * in two places concurrently. Call resetFragment() if you need a fresh
      * instance (e.g. after fully tearing down the host that owned it).
+     * Hosts that need to dismiss the fragment should call setOnSdkExitRequested().
      */
     fun getFragment(): FlutterFragment {
         ensureEngineReady()
@@ -218,9 +220,19 @@ class CrowdplaySdk :
         if (existing != null) {
             return existing
         }
-        val fragment = FlutterFragment.withCachedEngine(ENGINE_CACHE_KEY).build<FlutterFragment>()
+        val fragment = FlutterFragment.withCachedEngine(ENGINE_CACHE_KEY)
+            .shouldAutomaticallyHandleOnBackPressed(true)
+            .build<FlutterFragment>()
         cachedFragment = fragment
         return fragment
+    }
+
+    /**
+     * Registers the main-thread callback for CLOSE_CROWDPLAY requests when the
+     * host embeds the SDK as a fragment. Pass null to clear.
+     */
+    fun setOnSdkExitRequested(onSdkExitRequested: (() -> Unit)?) {
+        sdkExitHandler = onSdkExitRequested
     }
 
     /**
@@ -228,6 +240,7 @@ class CrowdplaySdk :
      * builds a fresh one. The underlying cached Flutter engine is retained.
      */
     fun resetFragment() {
+        sdkExitHandler = null
         cachedFragment = null
     }
 
@@ -269,7 +282,12 @@ class CrowdplaySdk :
             }
 
             "CLOSE_CROWDPLAY" -> {
-                lastActivityContext?.finishActivity(childActivityId)
+                val exitHandler = sdkExitHandler
+                if (exitHandler != null) {
+                    Handler(Looper.getMainLooper()).post { exitHandler() }
+                } else {
+                    lastActivityContext?.finishActivity(childActivityId)
+                }
                 result.success(null)
             }
 
