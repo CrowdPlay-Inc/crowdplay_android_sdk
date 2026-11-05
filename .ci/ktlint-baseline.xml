@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <baseline version="1.0">
     <file name="CrowdplaySdk.kt">
-        <error line="579" column="5" source="standard:enum-entry-name-case" />
-        <error line="580" column="5" source="standard:enum-entry-name-case" />
-        <error line="581" column="5" source="standard:enum-entry-name-case" />
-        <error line="582" column="5" source="standard:enum-entry-name-case" />
+        <error line="597" column="5" source="standard:enum-entry-name-case" />
+        <error line="598" column="5" source="standard:enum-entry-name-case" />
+        <error line="599" column="5" source="standard:enum-entry-name-case" />
+        <error line="600" column="5" source="standard:enum-entry-name-case" />
     </file>
 </baseline>
