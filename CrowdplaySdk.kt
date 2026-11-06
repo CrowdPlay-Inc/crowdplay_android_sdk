@@ -142,6 +142,8 @@ class CrowdplaySdk :
         engine.dartExecutor.executeDartEntrypoint(
             DartExecutor.DartEntrypoint.createDefault()
         )
+        // shortcut: buffer 10 startup calls, add a readiness handshake if startup can exceed this.
+        channel!!.resizeChannelBuffer(10)
         FlutterEngineCache.getInstance().put(ENGINE_CACHE_KEY, engine)
         flutterEngine = engine
     }
