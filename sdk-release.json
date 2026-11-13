@@ -1,0 +1,9 @@
+{
+  "revision": "c49e99979fd97604803f503d77d09894b65a6da8",
+  "build_number": 9753,
+  "version": "1.9753",
+  "maven_sha256": "21d1b1d83cb826c9ee6d6a51f21dc4b9687619c7ed95f58252c08ecd0459313a",
+  "example_sha256": "25cb7c84efd660c9987d88235323bdf30b621340dbb9adbe248c93d66b234646",
+  "platform": "android",
+  "payload_sha256": "10941f03fbab8e720f10cab74338fbd1b8711e418f6bc0cd16489d00dd11a021"
+}
