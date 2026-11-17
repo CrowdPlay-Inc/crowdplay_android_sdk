@@ -1,9 +1,9 @@
 {
-  "revision": "d9a6eb28c42a921bc70e4eb7234a5c07217196cf",
-  "build_number": 9763,
-  "version": "1.9763",
-  "maven_sha256": "6c01d1a61e81f925b25b8548f7d43792259417f5867f335d685c80cfcb4496e0",
-  "example_sha256": "15806fb031adaa00c69e929cbd1c95ad363b37e7d0c2e448c29a1759708b6541",
+  "revision": "6da04a4eb8dee879968be7e97dd41e957f10e026",
+  "build_number": 9792,
+  "version": "1.9792",
+  "maven_sha256": "6620442cbf30c4824188bb0608772f4cc8676b50873ae981e3c4f5772bbddfc1",
+  "example_sha256": "783f407be5563eb29ce9d2fe6cedc7d22b212e3002fe8e7acef66a2dfd90de4c",
   "platform": "android",
   "payload_sha256": "10941f03fbab8e720f10cab74338fbd1b8711e418f6bc0cd16489d00dd11a021"
 }
