@@ -1,9 +1,10 @@
 {
-  "revision": "6da04a4eb8dee879968be7e97dd41e957f10e026",
-  "build_number": 9792,
-  "version": "1.9792",
-  "maven_sha256": "6620442cbf30c4824188bb0608772f4cc8676b50873ae981e3c4f5772bbddfc1",
-  "example_sha256": "783f407be5563eb29ce9d2fe6cedc7d22b212e3002fe8e7acef66a2dfd90de4c",
+  "revision": "2b5252f87b2b50dc7e83690c340364863cc4ee93",
+  "build_number": 9879,
+  "version": "1.9879",
+  "maven_sha256": "211416ae1f3cfac5f1b47dc18e724b2f7f7b19435cdc9d9fc3bdbfcec4a02563",
+  "example_sha256": "7a13fb9fab9d749179554e974bf24825fbfe04e606cb703252f2c94f5fc2d623",
+  "shorebird_app_id": "ac772a71-055f-40fc-a80e-f412588ca280",
   "platform": "android",
-  "payload_sha256": "10941f03fbab8e720f10cab74338fbd1b8711e418f6bc0cd16489d00dd11a021"
+  "payload_sha256": "c614476da30215b0bd6d96ec3fee5f190cf095adf917a035426f94a6230b65c5"
 }
