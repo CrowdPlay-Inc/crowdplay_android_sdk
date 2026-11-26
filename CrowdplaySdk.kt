@@ -139,8 +139,15 @@ class CrowdplaySdk :
         GeneratedPluginRegistrant.registerWith(engine)
         engine.plugins.add(this)
         engine.navigationChannel.setInitialRoute("/")
+        val info = context.packageManager.getApplicationInfo(
+            context.packageName,
+            android.content.pm.PackageManager.GET_META_DATA
+        )
+        val track = info.metaData?.getString("CrowdPlayShorebirdTrack")
+        val args = track?.let { listOf("--shorebird-track=$it") } ?: emptyList()
         engine.dartExecutor.executeDartEntrypoint(
-            DartExecutor.DartEntrypoint.createDefault()
+            DartExecutor.DartEntrypoint.createDefault(),
+            args
         )
         // shortcut: buffer 10 startup calls, add a readiness handshake if startup can exceed this.
         channel!!.resizeChannelBuffer(10)
@@ -595,6 +602,8 @@ data class CrowdPlayAuthResult(
     val errorCode: String? = null
 )
 
+// Preserve the existing public enum names for SDK consumers.
+@Suppress("ktlint:standard:enum-entry-name-case")
 enum class CrowdPlayAuthState {
     loggedIn,
     loggedOut,
